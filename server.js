@@ -1,62 +1,59 @@
+// Load environment variables from .env
+require('dotenv').config();
+
 const express = require('express');
 const multer = require('multer');
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
-const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const fs = require('fs');
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 
 const app = express();
-app.use(express.json());
 
-const upload = multer({ dest: '/tmp/' }); // Render ephemeral storage - use stream in prod
+// Set up multer for file uploads
+const upload = multer({ dest: 'uploads/' });
 
-const REGION = process.env.AWS_REGION || 'us-east-1';
-const BUCKET = process.env.S3_BUCKET;
+// AWS S3 client configuration
 const s3 = new S3Client({
-  region: REGION,
+  region: process.env.AWS_REGION,
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-  }
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
 });
 
-// simple health
-app.get('/', (req,res) => res.send('Hello from Node + S3 demo'));
+// Test endpoint
+app.get('/', (req, res) => {
+  res.send('🚀 Node.js + S3 Demo running successfully!');
+});
 
-// upload a file (multipart/form-data)
+// Upload endpoint
 app.post('/upload', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
+    if (!file) return res.status(400).send({ error: "No file uploaded." });
+
     const key = `uploads/${Date.now()}_${file.originalname}`;
-    const body = fs.createReadStream(file.path);
+    const fileStream = fs.createReadStream(file.path);
 
     await s3.send(new PutObjectCommand({
-      Bucket: BUCKET,
+      Bucket: process.env.S3_BUCKET,
       Key: key,
-      Body: body,
-      ContentType: file.mimetype
+      Body: fileStream,
+      ContentType: file.mimetype,
     }));
 
-    // remove temp file
+    // Delete local temp file
     fs.unlinkSync(file.path);
 
-    res.json({ key, url: `s3://${BUCKET}/${key}` });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    res.json({
+      message: '✅ File uploaded successfully!',
+      s3_path: `s3://${process.env.S3_BUCKET}/${key}`
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-// generate presigned GET URL
-app.get('/presign/:key', async (req, res) => {
-  try {
-    const key = req.params.key;
-    const cmd = new PutObjectCommand({ Bucket: BUCKET, Key: key }); // for PUT presign example
-    // Example: sign for GET would use GetObjectCommand
-    res.json({ note: 'Change to GetObjectCommand for download presign.' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Server listening on ${port}`));
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
