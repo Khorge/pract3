@@ -1,14 +1,18 @@
-// Load environment variables from .env
+// Load environment variables
 require('dotenv').config();
 
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const path = require('path');
 
 const app = express();
 
-// Set up multer for file uploads
+// Serve static files (for index.html)
+app.use(express.static(__dirname));
+
+// Multer setup for file uploads
 const upload = multer({ dest: 'uploads/' });
 
 // AWS S3 client configuration
@@ -21,7 +25,7 @@ const s3 = new S3Client({
 });
 
 // Test endpoint
-app.get('/', (req, res) => {
+app.get('/api', (req, res) => {
   res.send('🚀 Node.js + S3 Demo running successfully!');
 });
 
@@ -44,16 +48,20 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     // Delete local temp file
     fs.unlinkSync(file.path);
 
+    // Return clickable S3 URL
+    const s3Url = `https://${process.env.S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+
     res.json({
       message: '✅ File uploaded successfully!',
-      s3_path: `s3://${process.env.S3_BUCKET}/${key}`
+      s3_url: s3Url
     });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Start the server
+// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
